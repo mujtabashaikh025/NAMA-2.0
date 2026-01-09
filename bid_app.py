@@ -771,14 +771,20 @@ if uploaded_files:
                                 final_file_to_view = all_files[0]
                             
                             if final_file_to_view:
-                                if st.button("View Quotation", key=f"btn_view_{i}", type="primary"):
+                                try:
                                     with z.open(final_file_to_view) as f:
-                                        import base64
-                                        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-                                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-                                        st.markdown(pdf_display, unsafe_allow_html=True)
+                                        file_content = f.read()
+                                        st.download_button(
+                                            label="Download Quotation",
+                                            data=file_content,
+                                            file_name=final_file_to_view,
+                                            mime="application/pdf",
+                                            key=f"dl_qt_{i}"
+                                        )
+                                except Exception as e:
+                                    st.error(f"Error preparing download: {e}")
                             else:
-                                st.warning("No PDF files found to view.")
+                                st.warning("No PDF files found to download.")
                                     
                     except Exception as e:
                         st.error(f"Error reading source zip: {e}")
