@@ -758,12 +758,43 @@ if uploaded_files:
                                 final_file_to_view = all_files[0]
                             
                             if final_file_to_view:
-                                if st.button("View Quotation", key=f"btn_view_{i}", type="primary"):
-                                    with z.open(final_file_to_view) as f:
-                                        import base64
-                                        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-                                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-                                        st.markdown(pdf_display, unsafe_allow_html=True)
+                                # Initialize session state for this tab's PDF viewer if not present
+                                view_key = f"view_pdf_{i}"
+                                if view_key not in st.session_state:
+                                    st.session_state[view_key] = False
+
+                                # Layout for buttons
+                                b_col1, b_col2 = st.columns([1, 4])
+                                with b_col1:
+                                    if st.button("View Quotation", key=f"btn_view_{i}", type="primary"):
+                                        st.session_state[view_key] = not st.session_state[view_key]
+
+                                with b_col2:
+                                    if st.session_state[view_key]:
+                                        st.write(f"**Viewing:** `{final_file_to_view}`")
+                                
+                                # Use session state to control display
+                                if st.session_state[view_key]:
+                                    try:
+                                        with z.open(final_file_to_view) as f:
+                                            file_content = f.read()
+                                            import base64
+                                            base64_pdf = base64.b64encode(file_content).decode('utf-8')
+
+                                            # Download Button (Visible when viewing)
+                                            st.download_button(
+                                                label="Download Quotation PDF", 
+                                                data=file_content, 
+                                                file_name=final_file_to_view, 
+                                                mime="application/pdf", 
+                                                key=f"dl_btn_{i}"
+                                            )
+                                            
+                                            # Iframe Display
+                                            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+                                            st.markdown(pdf_display, unsafe_allow_html=True)
+                                    except Exception as e:
+                                        st.error(f"Error displaying PDF: {e}")
                             else:
                                 st.warning("No PDF files found to view.")
                                     
