@@ -4,13 +4,11 @@ import re
 import os 
 import pandas as pd
 import json
-
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date
 from dotenv import load_dotenv
 import pypdf 
 import io
-
 import zipfile 
 import altair as alt 
 
@@ -420,14 +418,9 @@ if uploaded_files:
             valid_reports.sort(key=lambda x: x["price"])
             
             if valid_reports:
-                # Assign L1 (Lowest)
-                valid_reports[0]["report"]["rank_label"] = "L1"
-                # Assign L3 (Highest) - if more than 1
-                if len(valid_reports) > 1:
-                    valid_reports[-1]["report"]["rank_label"] = "L3"
-                # Assign L2 (Others)
-                for i in range(1, len(valid_reports) - 1):
-                    valid_reports[i]["report"]["rank_label"] = "L2"
+                # Assign Dynamic Rankings (L1, L2...? Ln)
+                for i, item in enumerate(valid_reports):
+                    item["report"]["rank_label"] = f"L{i+1}"
             
             # Formate the commercial_info string
             for item in valid_reports:
@@ -617,6 +610,15 @@ if uploaded_files:
             row_pay = {"Aspects": "Payment Terms(1)"}
             row_total = {"Aspects": "Total"}
 
+            # Calculate Scores
+            # Re-defined with separate weightage column
+            row_tech = {"Aspects": "Technical Compliance", "Weightage": "(4)"}
+            row_comm = {"Aspects": "Commercial Compliance", "Weightage": "(2)"}
+            row_icv = {"Aspects": "In Country Value", "Weightage": "(2)"}
+            row_hist = {"Aspects": "Previous Project History", "Weightage": "(1)"}
+            row_pay = {"Aspects": "Payment Terms", "Weightage": "(1)"}
+            row_total = {"Aspects": "Total", "Weightage": ""}
+
             # Track total scores
             scores = {c: 0 for c in comp_data}
             winners = {c: [] for c in comp_data} # list of aspects won
@@ -661,6 +663,15 @@ if uploaded_files:
                 row_total[c] = scores[c]
 
             df_ex = pd.DataFrame([row_tech, row_comm, row_icv, row_hist, row_pay, row_total])
+            
+            # Reorder columns to put Weightage first
+            cols = ["Aspects", "Weightage"] + [c for c in df_ex.columns if c not in ["Aspects", "Weightage"]]
+            df_ex = df_ex[cols]
+            
+            # Use Aspects as index for cleaner display, but maybe keep it as column? 
+            # User request: "add extra column named as weightege" -> Implies table structure.
+            # Standard dataframe display in Streamlit handles columns well.
+            # Let's set index to Aspects so we don't have a numeric index.
             df_ex.set_index("Aspects", inplace=True)
             
             # Styling
@@ -670,21 +681,23 @@ if uploaded_files:
                 
                 # Check each cell
                 for c in df_in.columns:
+                    if c == "Weightage": continue
+                    
                     # Tech
-                    if "Tech" in winners[c]:
-                        style_df.at["Technical Compliance(4)", c] = 'background-color: #d4edda; color: #155724;'
+                    if "Tech" in winners.get(c, []):
+                        style_df.at["Technical Compliance", c] = 'background-color: #d4edda; color: #155724;'
                     # Comm
-                    if "Comm" in winners[c]:
-                        style_df.at["Commercial Compliance(2)", c] = 'background-color: #d4edda; color: #155724;'
+                    if "Comm" in winners.get(c, []):
+                        style_df.at["Commercial Compliance", c] = 'background-color: #d4edda; color: #155724;'
                     # ICV
-                    if "ICV" in winners[c]:
-                        style_df.at["In Country Value(2)", c] = 'background-color: #d4edda; color: #155724;'
+                    if "ICV" in winners.get(c, []):
+                        style_df.at["In Country Value", c] = 'background-color: #d4edda; color: #155724;'
                     # Hist
-                    if "Hist" in winners[c]:
-                        style_df.at["Previous Project History(1)", c] = 'background-color: #d4edda; color: #155724;'
+                    if "Hist" in winners.get(c, []):
+                        style_df.at["Previous Project History", c] = 'background-color: #d4edda; color: #155724;'
                     # Pay
-                    if "Pay" in winners[c]:
-                        style_df.at["Payment Terms(1)", c] = 'background-color: #d4edda; color: #155724;'
+                    if "Pay" in winners.get(c, []):
+                        style_df.at["Payment Terms", c] = 'background-color: #d4edda; color: #155724;'
                 
                 return style_df
 
@@ -758,43 +771,12 @@ if uploaded_files:
                                 final_file_to_view = all_files[0]
                             
                             if final_file_to_view:
-                                # Initialize session state for this tab's PDF viewer if not present
-                                view_key = f"view_pdf_{i}"
-                                if view_key not in st.session_state:
-                                    st.session_state[view_key] = False
-
-                                # Layout for buttons
-                                b_col1, b_col2 = st.columns([1, 4])
-                                with b_col1:
-                                    if st.button("View Quotation", key=f"btn_view_{i}", type="primary"):
-                                        st.session_state[view_key] = not st.session_state[view_key]
-
-                                with b_col2:
-                                    if st.session_state[view_key]:
-                                        st.write(f"**Viewing:** `{final_file_to_view}`")
-                                
-                                # Use session state to control display
-                                if st.session_state[view_key]:
-                                    try:
-                                        with z.open(final_file_to_view) as f:
-                                            file_content = f.read()
-                                            import base64
-                                            base64_pdf = base64.b64encode(file_content).decode('utf-8')
-
-                                            # Download Button (Visible when viewing)
-                                            st.download_button(
-                                                label="Download Quotation PDF", 
-                                                data=file_content, 
-                                                file_name=final_file_to_view, 
-                                                mime="application/pdf", 
-                                                key=f"dl_btn_{i}"
-                                            )
-                                            
-                                            # Iframe Display
-                                            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
-                                            st.markdown(pdf_display, unsafe_allow_html=True)
-                                    except Exception as e:
-                                        st.error(f"Error displaying PDF: {e}")
+                                if st.button("View Quotation", key=f"btn_view_{i}", type="primary"):
+                                    with z.open(final_file_to_view) as f:
+                                        import base64
+                                        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+                                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+                                        st.markdown(pdf_display, unsafe_allow_html=True)
                             else:
                                 st.warning("No PDF files found to view.")
                                     
